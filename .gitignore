@@ -1,0 +1,16 @@
+# .NET / Visual Studio
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+
+# MAUI / Mobile
+AppPackages/
+BundleArtifacts/
+*.apk
+*.aab
+
+# OS files
+.DS_Store
+Thumbs.db
