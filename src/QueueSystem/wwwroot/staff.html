@@ -1,0 +1,142 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>櫃檯操作面板</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .waiting-box {
+            background: #e7f3ff;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+        }
+
+        .waiting-count {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1.2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+            .btn-primary:active {
+                background: #0056b3;
+                transform: scale(0.98);
+            }
+
+        .btn-outline {
+            background: white;
+            color: #666;
+            border: 2px solid #ddd;
+        }
+
+        .current-serving {
+            margin-top: 1rem;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="card">
+            <h2>{{ branchName }}</h2>
+            <div class="waiting-box">
+                <div style="color: #666;">等待人數</div>
+                <div class="waiting-count">{{ waitingCount }}</div>
+            </div>
+
+            <button class="btn btn-primary" @click="callNext" :disabled="waitingCount === 0">
+                叫下一位 (Next)
+            </button>
+
+            <button class="btn btn-outline" @click="recall" :disabled="!lastCalledTicket">
+                重新叫號 (Recall)
+            </button>
+
+            <div class="current-serving" v-if="lastCalledTicket">
+                當前服務：<strong>{{ lastCalledTicket.ticketNumber }} 號</strong>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const branchName = ref("總店 01 櫃檯");
+                const waitingCount = ref(0);
+                const lastCalledTicket = ref(null);
+                const branchId = "Store01";
+
+                const connection = new signalR.HubConnectionBuilder()
+                    .withUrl("https://localhost:7296/hubs/queue")
+                    .withAutomaticReconnect().build();
+
+                // 監聽人數更新 [cite: 2026-02-19]
+                connection.on("UpdateWaitingCount", (count) => { waitingCount.value = count; });
+                connection.on("ReceiveNewTicket", (ticket) => { waitingCount.value = ticket.waitingCount; });
+
+                const callNext = async () => {
+                    const res = await fetch(`https://localhost:7296/api/tickets/call/${branchId}`, { method: 'POST' });
+                    if (res.ok) {
+                        lastCalledTicket.value = await res.json();
+                    } else {
+                        alert("目前無人排隊");
+                    }
+                };
+
+                const recall = async () => {
+                    if (!lastCalledTicket.value) return;
+                    await fetch(`https://localhost:7296/api/tickets/recall`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(lastCalledTicket.value)
+                    });
+                };
+
+                onMounted(() => { connection.start(); });
+
+                return { branchName, waitingCount, lastCalledTicket, callNext, recall };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

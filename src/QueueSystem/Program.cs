@@ -1,7 +1,8 @@
 using StackExchange.Redis;
 using QueueSystem.api.Services;
 using QueueSystem.api.Hubs;
-using Microsoft.AspNetCore.SignalR; // 必須引用以使用 IHubContext
+using QueueSystem.Shared; // 確保引用 DTO 命名空間
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,7 +20,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Conn
 // 業務邏輯服務
 builder.Services.AddScoped<TicketService>();
 
-// CORS 策略配置 (針對 SignalR 憑證需求優化)
+// CORS 策略配置
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -42,28 +43,26 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll"); // 必須位於 Map 端點定義之前
+app.UseStaticFiles(); // 允許 API 提供 wwwroot 下的 html 檔案
+app.UseCors("AllowAll");
 
 // --- API 端點定義 (Endpoints) ---
 
-// 1. 【客戶端】取號 API：僅入列 Redis，不廣播至看板
+// 1. 【客戶端】取號 API：入列後同步「等待人數」
 app.MapPost("/api/tickets/issue/{branchId}", async (string branchId, TicketService ticketService, IHubContext<QueueHub> hubContext) =>
 {
     var ticket = await ticketService.IssueTicketAsync(branchId);
 
-    // 【關鍵】雖然不叫號，但要告訴看板「更新等待人數」
+    // 通知所有端點（看板、櫃檯）更新等待人數
     await hubContext.Clients.All.SendAsync("UpdateWaitingCount", ticket.WaitingCount);
 
-    return Results.Ok(new { Message = "取號成功，請等待叫號", Data = ticket });
+    return Results.Ok(new { Message = "取號成功", Data = ticket });
 })
 .WithName("IssueTicket")
 .WithOpenApi();
 
-// 2. 【櫃檯端】叫號 API：從 Redis 提取並透過 SignalR 廣播至看板
-app.MapPost("/api/tickets/call/{branchId}", async (
-    string branchId,
-    TicketService ticketService,
-    IHubContext<QueueHub> hubContext) => // 注入 HubContext 以進行主動推播
+// 2. 【櫃檯端】叫號 API：提取號碼並廣播
+app.MapPost("/api/tickets/call/{branchId}", async (string branchId, TicketService ticketService, IHubContext<QueueHub> hubContext) =>
 {
     var ticket = await ticketService.CallNextAsync(branchId);
 
@@ -72,12 +71,23 @@ app.MapPost("/api/tickets/call/{branchId}", async (
         return Results.NotFound(new { Message = "目前無等待中號碼" });
     }
 
-    // 叫號時才執行 SignalR 廣播 [cite: 2026-02-19]
+    // 廣播跳號訊息，內容含最新 WaitingCount
     await hubContext.Clients.All.SendAsync("ReceiveNewTicket", ticket);
 
     return Results.Ok(ticket);
 })
 .WithName("CallNext")
+.WithOpenApi();
+
+// 3. 【櫃檯端】重叫 API：純廣播不操作 Redis
+app.MapPost("/api/tickets/recall", async (TicketDto ticket, IHubContext<QueueHub> hubContext) =>
+{
+    // 重複發送最後一次叫號的資訊，觸發看板語音與閃爍
+    await hubContext.Clients.All.SendAsync("ReceiveNewTicket", ticket);
+
+    return Results.Ok(new { Message = "已發送重叫通知" });
+})
+.WithName("RecallTicket")
 .WithOpenApi();
 
 // SignalR Hub 路由定義
