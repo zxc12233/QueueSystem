@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace QueueSystem.Shared;
+﻿namespace QueueSystem.Shared;
 
 /// <summary>
 /// 叫號票據傳輸物件 (DTO)
@@ -12,22 +6,22 @@ namespace QueueSystem.Shared;
 public class TicketDto
 {
     /// <summary>
-    /// 票號 (由 Redis Atomic Increment 產生)
+    /// 票號 (配合 Redis 字串處理，改為 string 以增加擴充性)
     /// </summary>
-    public long TicketNumber { get; init; }
+    public string TicketNumber { get; set; } = string.Empty;
 
     /// <summary>
     /// 分店或櫃檯代號 (必填)
     /// </summary>
-    public string BranchId { get; init; } = string.Empty;
+    public string BranchId { get; set; } = string.Empty;
 
     /// <summary>
-    /// 票據建立時間 (UTC)
+    /// 票據建立/叫號時間 (配合 Service 命名為 IssuedAt)
     /// </summary>
-    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+    public DateTime IssuedAt { get; set; } = DateTime.Now;
 
     /// <summary>
-    /// 當前等待人數
+    /// 當前等待人數 
     /// </summary>
     public int WaitingCount { get; set; }
 }

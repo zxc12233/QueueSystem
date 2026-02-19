@@ -2,36 +2,58 @@
 
 const app = createApp({
     setup() {
+        // --- 1. 響應式變數定義 (Refs) ---
         const currentNumber = ref("---");
         const branchName = ref("總店服務中心");
         const connectionStatus = ref("連線中...");
 
-        // --- 語音叫號邏輯 ---
+        // 補齊遺漏的變數 [cite: 2026-02-19]
+        const waitingCount = ref(0);
+        const history = ref([]);
+        const isFlashing = ref(false);
+
+        // --- 2. 語音叫號邏輯 ---
         const speakNumber = (number) => {
-            // 1. 建立語音請求物件
             const message = new SpeechSynthesisUtterance(`請 ${number} 號到櫃檯`);
-
-            // 2. 設定語音參數
-            message.lang = 'zh-TW';     // 設定語言：台灣繁體中文
-            message.rate = 0.9;         // 語速 (0.1 ~ 10)，略慢一點比較清晰
-            message.pitch = 1.0;        // 音調 (0 ~ 2)
-            message.volume = 1.0;       // 音量 (0 ~ 1)
-
-            // 3. 執行播報 (瀏覽器會自動排隊 queue 訊息，不怕連點)
+            message.lang = 'zh-TW';
+            message.rate = 0.9;
+            message.pitch = 1.0;
+            message.volume = 1.0;
             window.speechSynthesis.speak(message);
         };
 
+        // --- 3. SignalR 連線配置 ---
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("https://localhost:7296/hubs/queue")
             .withAutomaticReconnect([0, 2000, 10000, 30000])
             .build();
 
+        // 監聽：跳號通知 (包含人數更新) [cite: 2026-02-19]
         connection.on("ReceiveNewTicket", (ticket) => {
             console.log("收到跳號通知:", ticket);
-            currentNumber.value = ticket.ticketNumber;
 
-            // 【核心觸發】號碼更新時同時播報語音
+            // A. 更新歷史紀錄：將舊號碼推入歷史
+            if (currentNumber.value !== "---" && currentNumber.value !== ticket.ticketNumber) {
+                history.value.unshift(currentNumber.value);
+                if (history.value.length > 3) history.value.pop();
+            }
+
+            // B. 更新主顯示與等待人數 (注意 JSON 屬性為小寫) [cite: 2026-01-01]
+            currentNumber.value = ticket.ticketNumber;
+            waitingCount.value = ticket.waitingCount || 0;
+
+            // C. 觸發閃爍動畫
+            isFlashing.value = true;
+            setTimeout(() => { isFlashing.value = false; }, 2000);
+
+            // D. 執行語音播報
             speakNumber(ticket.ticketNumber);
+        });
+
+        // 監聽：單純人數更新 (取號時觸發) [cite: 2026-02-19]
+        connection.on("UpdateWaitingCount", (count) => {
+            console.log("收到人數更新通知:", count);
+            waitingCount.value = count;
         });
 
         const startConnection = async () => {
@@ -48,7 +70,15 @@ const app = createApp({
             startConnection();
         });
 
-        return { currentNumber, branchName, connectionStatus };
+        // --- 4. 關鍵：必須回傳給 Template 才能顯示 ---
+        return {
+            currentNumber,
+            branchName,
+            connectionStatus,
+            waitingCount,
+            history,
+            isFlashing
+        };
     }
 });
 

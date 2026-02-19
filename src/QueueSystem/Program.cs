@@ -1,34 +1,33 @@
 using StackExchange.Redis;
-using QueueSystem.Api.Services;
-using QueueSystem.Api.Hubs;
+using QueueSystem.api.Services;
+using QueueSystem.api.Hubs;
+using Microsoft.AspNetCore.SignalR; // 必須引用以使用 IHubContext
 
 var builder = WebApplication.CreateBuilder(args);
 
 // --- 服務註冊 (Service Registration) ---
 
-// 1. 基礎架構服務
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
 
-// 2. Redis 連線配置 (Singleton)
+// Redis 連線配置
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
     ?? throw new InvalidOperationException("Redis connection string not found.");
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
 
-// 3. 業務邏輯服務
+// 業務邏輯服務
 builder.Services.AddScoped<TicketService>();
 
-// 4. CORS 策略配置
-// 注意：SignalR 客戶端通常需要憑證 (Credentials)，因此不能使用 AllowAnyOrigin (*)
+// CORS 策略配置 (針對 SignalR 憑證需求優化)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.SetIsOriginAllowed(_ => true) // 允許任何來源連線，解決開發環境 Port 變動問題
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials();      // SignalR 必備：允許傳遞憑證
+              .AllowCredentials();
     });
 });
 
@@ -36,31 +35,52 @@ var app = builder.Build();
 
 // --- 中介軟體管線 (Middleware Pipeline) ---
 
-// 1. 開發環境工具
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// 2. 基礎安全性與導向
 app.UseHttpsRedirection();
-
-// 3. CORS 配置 (必須位於 MapHub 與 MapPost 之前)
-app.UseCors("AllowAll");
+app.UseCors("AllowAll"); // 必須位於 Map 端點定義之前
 
 // --- API 端點定義 (Endpoints) ---
 
-// 發號 API
-app.MapPost("/api/tickets/{branchId}", async (string branchId, TicketService ticketService) =>
+// 1. 【客戶端】取號 API：僅入列 Redis，不廣播至看板
+app.MapPost("/api/tickets/issue/{branchId}", async (string branchId, TicketService ticketService, IHubContext<QueueHub> hubContext) =>
 {
     var ticket = await ticketService.IssueTicketAsync(branchId);
-    return Results.Ok(ticket);
+
+    // 【關鍵】雖然不叫號，但要告訴看板「更新等待人數」
+    await hubContext.Clients.All.SendAsync("UpdateWaitingCount", ticket.WaitingCount);
+
+    return Results.Ok(new { Message = "取號成功，請等待叫號", Data = ticket });
 })
 .WithName("IssueTicket")
 .WithOpenApi();
 
-// SignalR 即時通訊 Hub
+// 2. 【櫃檯端】叫號 API：從 Redis 提取並透過 SignalR 廣播至看板
+app.MapPost("/api/tickets/call/{branchId}", async (
+    string branchId,
+    TicketService ticketService,
+    IHubContext<QueueHub> hubContext) => // 注入 HubContext 以進行主動推播
+{
+    var ticket = await ticketService.CallNextAsync(branchId);
+
+    if (ticket == null)
+    {
+        return Results.NotFound(new { Message = "目前無等待中號碼" });
+    }
+
+    // 叫號時才執行 SignalR 廣播 [cite: 2026-02-19]
+    await hubContext.Clients.All.SendAsync("ReceiveNewTicket", ticket);
+
+    return Results.Ok(ticket);
+})
+.WithName("CallNext")
+.WithOpenApi();
+
+// SignalR Hub 路由定義
 app.MapHub<QueueHub>("/hubs/queue");
 
 app.Run();

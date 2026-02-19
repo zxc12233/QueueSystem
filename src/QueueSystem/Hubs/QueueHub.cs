@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using QueueSystem.Shared;
 
-namespace QueueSystem.Api.Hubs;
+namespace QueueSystem.api.Hubs;
 
 public class QueueHub : Hub
 {

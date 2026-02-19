@@ -7,69 +7,171 @@
     <base href="/" />
     <link rel="stylesheet" href="css/app.css" />
     <style>
-        /* 快速定義看板樣式，確保視覺張力 */
+        :root {
+            --bg-color: #121212;
+            --primary-color: #00ff00;
+            --text-secondary: #888;
+            --history-bg: #1e1e1e;
+        }
+
         body {
-            background-color: #1a1a1a;
+            background-color: var(--bg-color);
             color: white;
-            font-family: 'Microsoft JhengHei', sans-serif;
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            margin: 0;
             overflow: hidden;
         }
 
-        .container {
+        .board-wrapper {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* 頂部：店名與狀態 */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .branch-info {
+            font-size: 1.8rem;
+            font-weight: bold;
+        }
+
+        .status-badge {
+            color: var(--primary-color);
+            font-size: 1.2rem;
+        }
+
+        /* 中間：主號碼顯示 */
+        .main-display {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
         }
 
-        .branch-info {
-            font-size: 2rem;
-            color: #888;
-            margin-bottom: 1rem;
+        .number-label {
+            font-size: 3rem;
+            color: var(--text-secondary);
+            letter-spacing: 20px;
         }
 
-        .number-display {
-            font-size: 15rem;
-            color: #00ff00;
+        .number-value {
+            font-size: 20rem;
+            color: var(--primary-color);
             font-weight: 900;
             line-height: 1;
-            text-shadow: 0 0 30px rgba(0,255,0,0.5);
+            text-shadow: 0 0 50px rgba(0, 255, 0, 0.4);
         }
 
-        .label {
-            font-size: 2.5rem;
-            letter-spacing: 10px;
-            margin-top: 1rem;
+        /* 閃爍動畫：當號碼變動時觸發 */
+        .animate-flash {
+            animation: flash-animation 0.8s ease-in-out 2;
+        }
+
+        @keyframes flash-animation {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(1.05);
+            }
+        }
+
+        /* 底部：歷史紀錄與等待人數 */
+        .footer {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            border-top: 2px solid #333;
+            padding-top: 20px;
+        }
+
+        .history-list {
+            display: flex;
+            gap: 15px;
+        }
+
+        .history-item {
+            background: var(--history-bg);
+            padding: 10px 25px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .history-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .history-value {
+            font-size: 1.8rem;
+            font-weight: bold;
             color: #ccc;
+        }
+
+        .waiting-info {
+            text-align: right;
+            align-self: center;
+        }
+
+        .waiting-count {
+            font-size: 2.5rem;
+            color: #ffbb00;
+            font-weight: bold;
         }
 
         [v-cloak] {
             display: none;
         }
-        /* 防止 Vue 載入前的閃爍 */
     </style>
 </head>
 
 <body>
     <div id="app" v-cloak>
-        <div class="container">
-            <div class="branch-info">{{ branchName }} - 即時看板</div>
-            <div class="number-display">{{ currentNumber }}</div>
-            <div class="label">請持票據前往櫃檯</div>
+        <div class="board-wrapper">
+            <div class="header">
+                <div class="branch-info">{{ branchName }}</div>
+                <div class="status-badge">● {{ connectionStatus }}</div>
+            </div>
+
+            <div class="main-display">
+                <div class="number-label">現在叫號</div>
+                <div :class="['number-value', { 'animate-flash': isFlashing }]">
+                    {{ currentNumber }}
+                </div>
+            </div>
+
+            <div class="footer">
+                <div class="history-section">
+                    <div class="history-list">
+                        <div v-for="(num, index) in history" :key="index" class="history-item">
+                            <div class="history-label">前次號碼</div>
+                            <div class="history-value">{{ num }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="waiting-info">
+                    <span style="font-size: 1.2rem; color: #888;">等待人數：</span>
+                    <span class="waiting-count">{{ waitingCount }}</span>
+                    <span style="color: #888;"> 人</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div id="blazor-error-ui" style="display:none;">
-        發生錯誤。 <a href="" class="reload">重新整理</a>
-    </div>
-
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-
     <script src="_framework/maui-index.js"></script>
-
     <script src="js/signalr-service.js"></script>
 </body>
 </html>
