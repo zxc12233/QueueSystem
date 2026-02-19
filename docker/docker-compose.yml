@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  # Redis: 負責原子發號與快取狀態
+  queue-redis:
+    image: redis:7.2-alpine
+    container_name: queue-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - queue-network
+
+networks:
+  queue-network:
+    driver: bridge
