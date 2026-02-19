@@ -1,0 +1,160 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>取號機</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <style>
+        :root {
+            --primary: #007bff;
+            --success: #28a745;
+        }
+
+        body {
+            font-family: sans-serif;
+            background: #f8f9fa;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .kiosk-container {
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+            padding: 2rem;
+        }
+
+        /* 初始狀態：大按鈕 */
+        .btn-issue {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary);
+            color: white;
+            font-size: 2.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 15px 35px rgba(0,123,255,0.3);
+            transition: 0.3s;
+        }
+
+            .btn-issue:active {
+                transform: scale(0.95);
+                box-shadow: 0 5px 15px rgba(0,123,255,0.2);
+            }
+
+            .btn-issue:disabled {
+                background: #ccc;
+            }
+
+        /* 成功狀態：票號顯示 */
+        .success-card {
+            background: white;
+            padding: 3rem;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .ticket-number {
+            font-size: 8rem;
+            font-weight: 900;
+            color: var(--success);
+            margin: 1rem 0;
+        }
+
+        .waiting-status {
+            margin-top: 2rem;
+            font-size: 1.5rem;
+            color: #666;
+        }
+
+        .waiting-badge {
+            color: var(--primary);
+            font-weight: bold;
+            font-size: 2rem;
+        }
+
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <div class="kiosk-container">
+            <div v-if="!issuedTicket">
+                <h1 style="font-size: 3rem; margin-bottom: 3rem;">歡迎光臨</h1>
+                <button class="btn-issue" @click="takeTicket" :disabled="loading">
+                    {{ loading ? '處理中...' : '點擊取號' }}
+                </button>
+                <div class="waiting-status">
+                    目前等待人數：<span class="waiting-badge">{{ waitingCount }}</span> 人
+                </div>
+            </div>
+
+            <div v-else class="success-card">
+                <h2 style="color: #666;">您的號碼為</h2>
+                <div class="ticket-number">{{ issuedTicket.data.ticketNumber }}</div>
+                <p style="font-size: 1.2rem; color: #888;">請保留此號碼，留意看板叫號</p>
+                <div style="margin-top: 2rem; color: #ccc;">{{ countdown }} 秒後自動返回</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const branchId = "Store01";
+                const waitingCount = ref(0);
+                const issuedTicket = ref(null);
+                const loading = ref(false);
+                const countdown = ref(5);
+
+                const connection = new signalR.HubConnectionBuilder()
+                    .withUrl("https://localhost:7296/hubs/queue")
+                    .withAutomaticReconnect().build();
+
+                // 監聽人數更新 [cite: 2026-02-19]
+                connection.on("UpdateWaitingCount", (count) => { waitingCount.value = count; });
+                connection.on("ReceiveNewTicket", (ticket) => { waitingCount.value = ticket.waitingCount; });
+
+                const takeTicket = async () => {
+                    loading.value = true;
+                    try {
+                        const res = await fetch(`https://localhost:7296/api/tickets/issue/${branchId}`, { method: 'POST' });
+                        if (res.ok) {
+                            issuedTicket.value = await res.json();
+                            startCountdown();
+                        }
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const startCountdown = () => {
+                    countdown.value = 5;
+                    const timer = setInterval(() => {
+                        countdown.value--;
+                        if (countdown.value <= 0) {
+                            clearInterval(timer);
+                            issuedTicket.value = null;
+                        }
+                    }, 1000);
+                };
+
+                onMounted(() => { connection.start(); });
+
+                return { waitingCount, issuedTicket, loading, takeTicket, countdown };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
