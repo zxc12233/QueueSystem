@@ -12,6 +12,23 @@ services:
     networks:
       - queue-network
 
+  # Nginx: 負責反向代理與靜態檔案派送 [cite: 2026-02-19]
+  queue-nginx:
+    image: nginx:latest
+    container_name: queue-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../src/QueueSystem.api/wwwroot:/usr/share/nginx/html:ro # 掛載 API 靜態資源 [cite: 2026-02-19]
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # 讓容器能連回筆電本機運行的 .NET API [cite: 2026-02-19]
+    networks:
+      - queue-network
+    depends_on:
+      - queue-redis
+
 networks:
   queue-network:
     driver: bridge
